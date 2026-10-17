@@ -1,64 +1,56 @@
+
 using UnityEngine;
 using Unity.Netcode;
-using System;
 
 public class PlayerMovement : NetworkBehaviour
 {
-
     [Header("References")]
-
     [SerializeField] private Rigidbody _playerRigidbody;
-
     [SerializeField] private PlayerDataSO _playerData;
-
     [SerializeField] private Camera _playerCamera;
-
     [SerializeField] private PlayerAnimationController _playerAnimationController;
 
-    private float _horizontal, _vertical;
+    [Header("Settings")]
+    [SerializeField] private PlayerState _currentPlayerState;
+    [SerializeField] private float _mouseSensitivity = 150f;
 
+    private float _horizontal;
+    private float _vertical;
     private float _mouseX;
+    private float _rotationY;
 
     private bool _isRun;
-
     private bool _isCrouch;
-
-    [SerializeField] private PlayerState _currentPlayerState;
-
-    [SerializeField] private float _mouseSensitivity;
 
     public override void OnNetworkSpawn()
     {
         _playerCamera.enabled = IsOwner;
+        _rotationY = transform.eulerAngles.y;
     }
 
     private void Update()
     {
         if (!IsOwner)
-        {
             return;
-        }
 
-        MoveControll();
         MyInput();
-        Rotate();
+        MoveControll();
         SetPlayerState();
     }
 
     private void FixedUpdate()
     {
         if (!IsOwner)
-        {
             return;
-        }
 
+        Rotate();
         Move();
     }
 
     private void MyInput()
     {
-        _horizontal = Input.GetAxis("Horizontal");
-        _vertical = Input.GetAxis("Vertical");
+        _horizontal = Input.GetAxisRaw("Horizontal");
+        _vertical = Input.GetAxisRaw("Vertical");
 
         _mouseX = Input.GetAxis("Mouse X") * _mouseSensitivity;
 
@@ -83,20 +75,25 @@ public class PlayerMovement : NetworkBehaviour
     private void Jump()
     {
         _playerAnimationController.JumpAnimation();
-        _playerRigidbody.AddForce(Vector3.up * _playerData.JumpForce, ForceMode.Impulse);
+
+        _playerRigidbody.AddForce(
+            Vector3.up * _playerData.JumpForce,
+            ForceMode.Impulse
+        );
     }
 
     private void Move()
     {
-        Vector3 move = new Vector3(_horizontal, 0f, _vertical).normalized;
+        Vector3 move = new Vector3(
+            _horizontal,
+            0f,
+            _vertical
+        ).normalized;
 
         float speed = GetPlayerSpeed();
 
-        Vector3 forward = transform.forward;
-        Vector3 right = transform.right;
-
-        Vector3 velocity = (forward * move.z + right * move.x)
-                           * speed;
+        Vector3 velocity =
+            (transform.forward * move.z + transform.right * move.x) * speed;
 
         _playerRigidbody.linearVelocity = new Vector3(
             velocity.x,
@@ -134,28 +131,33 @@ public class PlayerMovement : NetworkBehaviour
     {
         PlayerState newPlayerState = _currentPlayerState switch
         {
-            PlayerState.Idle => _isCrouch ? PlayerState.Crouch :
-                                _isRun ? PlayerState.Run :
-                                (_horizontal != 0f || _vertical != 0f) ? PlayerState.Walk :
-                                PlayerState.Idle,
+            PlayerState.Idle =>
+                _isCrouch ? PlayerState.Crouch :
+                _isRun ? PlayerState.Run :
+                (_horizontal != 0f || _vertical != 0f) ? PlayerState.Walk :
+                PlayerState.Idle,
 
-            PlayerState.Walk => !IsGround() ? PlayerState.Air :
-                                _isCrouch ? PlayerState.Crouch :
-                                _isRun ? PlayerState.Run :
-                                (_horizontal == 0f && _vertical == 0f) ? PlayerState.Idle :
-                                PlayerState.Walk,
+            PlayerState.Walk =>
+                !IsGround() ? PlayerState.Air :
+                _isCrouch ? PlayerState.Crouch :
+                _isRun ? PlayerState.Run :
+                (_horizontal == 0f && _vertical == 0f) ? PlayerState.Idle :
+                PlayerState.Walk,
 
-            PlayerState.Run => !IsGround() ? PlayerState.Air :
-                               _isCrouch ? PlayerState.Crouch :
-                               !_isRun ? PlayerState.Walk :
-                               PlayerState.Run,
+            PlayerState.Run =>
+                !IsGround() ? PlayerState.Air :
+                _isCrouch ? PlayerState.Crouch :
+                !_isRun ? PlayerState.Walk :
+                PlayerState.Run,
 
-            PlayerState.Crouch => !IsGround() ? PlayerState.Air :
-                                  !_isCrouch ? PlayerState.Idle :
-                                  PlayerState.Crouch,
+            PlayerState.Crouch =>
+                !IsGround() ? PlayerState.Air :
+                !_isCrouch ? PlayerState.Idle :
+                PlayerState.Crouch,
 
-            PlayerState.Air => IsGround() ? PlayerState.Idle :
-                               PlayerState.Air,
+            PlayerState.Air =>
+                IsGround() ? PlayerState.Idle :
+                PlayerState.Air,
 
             _ => PlayerState.Idle
         };
@@ -165,12 +167,20 @@ public class PlayerMovement : NetworkBehaviour
 
     private void Rotate()
     {
-        transform.Rotate(0f, _mouseX * Time.deltaTime, 0f);
+        _rotationY += _mouseX;
+
+        _playerRigidbody.MoveRotation(
+            Quaternion.Euler(0f, _rotationY, 0f)
+        );
     }
 
     private bool IsGround()
     {
-        return Physics.Raycast(transform.position, Vector3.down, _playerData.PlayerHeight);
+        return Physics.Raycast(
+            transform.position,
+            Vector3.down,
+            _playerData.PlayerHeight
+        );
     }
 
     public PlayerState GetPlayerState()
