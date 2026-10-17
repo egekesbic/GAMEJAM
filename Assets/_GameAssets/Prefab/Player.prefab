@@ -1579,7 +1579,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkObject
-  GlobalObjectIdHash: 1446594001
+  GlobalObjectIdHash: 75899037
   InScenePlacedSourceGlobalObjectIdHash: 0
   m_InScenePlacedDisabledByDefault: 0
   DeferredDespawnTick: 0
@@ -1625,6 +1625,7 @@ MonoBehaviour:
   _playerRigidbody: {fileID: 9129022502979250164}
   _playerData: {fileID: 11400000, guid: 2b60ccef44ee71845b3f58398fc453f8, type: 2}
   _playerCamera: {fileID: 782828799915889983}
+  _playerAnimationController: {fileID: -8412137486563864097}
   _currentPlayerState: 0
   _mouseSensitivity: 1000
 --- !u!114 &6720145478140561494
@@ -1793,6 +1794,10 @@ MonoBehaviour:
       NameHash: -1154928320
       Synchronize: 1
       ParameterType: 4
+    - name: Jump
+      NameHash: 125937960
+      Synchronize: 1
+      ParameterType: 9
   AnimatorParametersExpanded: 0
 --- !u!1 &5940851387364950672
 GameObject:

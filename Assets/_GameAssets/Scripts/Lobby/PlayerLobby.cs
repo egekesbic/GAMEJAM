@@ -13,7 +13,7 @@ public class PlayerLobby : NetworkBehaviour
         if (LobbyGameManager.Instance == null)
             return;
 
-        LobbyGameManager.Instance.ClientJoin_ServerRPC();
+        LobbyGameManager.Instance.ClientJoin_ServerRpc();
         send = true;
     }
 }

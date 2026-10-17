@@ -14,6 +14,9 @@ public class HostGameManager
     private Allocation _allocation;
 
     private string _joinCode;
+
+    public static HostGameManager Instance { get; set; } = new HostGameManager();
+
     public async UniTask StartHostAsync()
     {
         try
@@ -42,6 +45,11 @@ public class HostGameManager
         NetworkManager.Singleton.StartHost();
 
         NetworkManager.Singleton.SceneManager.LoadScene("LobbyScene",LoadSceneMode.Single);
+    }
+
+    public string GetRoomCode()
+    {
+        return _joinCode;
     }
 
 }
