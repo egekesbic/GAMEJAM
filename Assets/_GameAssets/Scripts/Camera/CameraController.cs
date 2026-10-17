@@ -11,7 +11,7 @@ public class CameraController : NetworkBehaviour
 
     private float _xRotation;
 
-    private void Update()
+    private void FixedUpdate()
     {
         if (!IsOwner)
         {
