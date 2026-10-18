@@ -11,9 +11,9 @@ public class CameraController : NetworkBehaviour
 
     private float _xRotation;
 
-    private void FixedUpdate()
+    private void Update()
     {
-        if (!IsOwner)
+        if (!IsOwner || _playerCamera == null || FuseBox.IsAnyPanelOpen)
         {
             return;
         }

@@ -48,6 +48,8 @@ public class LobbyGameManager : NetworkBehaviour
         {
             Instance = null;
         }
+
+        base.OnNetworkDespawn();
     }
 
     private void SetHostChacter()
@@ -67,8 +69,8 @@ public class LobbyGameManager : NetworkBehaviour
         SetReadyText_RPC(false, "Not Ready");
     }
 
-    [ServerRpc(RequireOwnership = false)]
-    public void ClientJoin_ServerRpc()
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+    public void ClientJoin_ServerRpc(RpcParams rpcParams = default)
     {
         if (!IsServer)
             return;
@@ -98,10 +100,10 @@ public class LobbyGameManager : NetworkBehaviour
         _player2FemaleCharacter.gameObject.SetActive(isMale);
     }
 
-    [ServerRpc(RequireOwnership = false)]
+    [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
     public void Ready_ServerRpc(
         bool isServer,
-        ServerRpcParams rpcParams = default)
+        RpcParams rpcParams = default)
     {
         if (!IsServer || _isStartingGame)
             return;

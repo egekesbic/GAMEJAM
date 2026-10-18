@@ -24,16 +24,21 @@ public class HeadBob : NetworkBehaviour
     [SerializeField] private float _returnSpeed = 8f;
 
     private Vector3 _startPosition;
+    private Vector3 _bobOffset;
     private float _bobTimer;
+    private CrouchCamera _crouchCamera;
 
     private void Start()
     {
-        _startPosition = _cameraTransform.localPosition;
+        if (_cameraTransform != null)
+            _startPosition = _cameraTransform.localPosition;
+
+        _crouchCamera = GetComponent<CrouchCamera>();
     }
 
-    private void Update()
+    private void LateUpdate()
     {
-        if (!IsOwner)
+        if (!IsOwner || _playerMovement == null || _cameraTransform == null)
         {
             return;
         }
@@ -67,12 +72,15 @@ public class HeadBob : NetworkBehaviour
                 break;
         }
 
-        bool isMoving = state == PlayerState.Walk ||
-                        state == PlayerState.Run ||
-                        (state == PlayerState.Crouch &&
-                         (Input.GetAxisRaw("Horizontal") != 0f ||
-                          Input.GetAxisRaw("Vertical") != 0f));
+        bool hasMovementInput = new Vector2(
+            _playerMovement.GetHorizontal(),
+            _playerMovement.GetVertical()).sqrMagnitude > 0.0001f;
+        bool isMoving = hasMovementInput &&
+                        (state == PlayerState.Walk ||
+                         state == PlayerState.Run ||
+                         state == PlayerState.Crouch);
 
+        Vector3 targetOffset = Vector3.zero;
         if (isMoving)
         {
             _bobTimer += Time.deltaTime * bobSpeed;
@@ -80,24 +88,18 @@ public class HeadBob : NetworkBehaviour
             float bobY = Mathf.Sin(_bobTimer) * bobAmount;
             float bobX = Mathf.Cos(_bobTimer * 0.5f) * bobAmount * 0.5f;
 
-            Vector3 targetPosition = _startPosition +
-                                     new Vector3(bobX, bobY, 0f);
-
-            _cameraTransform.localPosition = Vector3.Lerp(
-                _cameraTransform.localPosition,
-                targetPosition,
-                Time.deltaTime * bobSpeed
-            );
+            targetOffset = new Vector3(bobX, bobY, 0f);
+            _bobOffset = Vector3.Lerp(_bobOffset, targetOffset, Time.deltaTime * bobSpeed);
         }
         else
         {
             _bobTimer = 0f;
-
-            _cameraTransform.localPosition = Vector3.Lerp(
-                _cameraTransform.localPosition,
-                _startPosition,
-                Time.deltaTime * _returnSpeed
-            );
+            _bobOffset = Vector3.Lerp(_bobOffset, targetOffset, Time.deltaTime * _returnSpeed);
         }
+
+        Vector3 basePosition = _crouchCamera != null
+            ? _crouchCamera.BasePosition
+            : _startPosition;
+        _cameraTransform.localPosition = basePosition + _bobOffset;
     }
 }

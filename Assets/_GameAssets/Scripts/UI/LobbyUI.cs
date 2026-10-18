@@ -12,31 +12,45 @@ public class LobbyUI : NetworkBehaviour
 
     private void Awake()
     {
-        _readyButton.onClick.AddListener(ReadyButtonOnClick);
+        if (_readyButton != null)
+            _readyButton.onClick.AddListener(ReadyButtonOnClick);
     }
 
     public override void OnNetworkSpawn()
     {
-        if (IsServer)
+        if (!IsServer)
+            return;
+
+        HostGameManager hostGameManager = HostSingleton.Instance != null
+            ? HostSingleton.Instance.HostGameManager
+            : null;
+        if (hostGameManager == null)
         {
-            string roomCode = HostGameManager.Instance.GetRoomCode();
-            SetRoomCodeClientRpc(roomCode);
+            Debug.LogWarning("LobbyUI cannot display a room code because the host manager is unavailable.", this);
+            return;
         }
+
+        SetRoomCodeClientRpc(hostGameManager.GetRoomCode());
     }
 
     [ClientRpc]
     private void SetRoomCodeClientRpc(string roomCode)
     {
-        _roomCodeText.text = "Room Code: " + roomCode;
+        if (_roomCodeText != null)
+            _roomCodeText.text = "Room Code: " + roomCode;
     }
 
     private void ReadyButtonOnClick()
     {
-        LobbyGameManager.Instance.Ready_ServerRpc(IsServer);
+        if (LobbyGameManager.Instance != null && IsSpawned)
+            LobbyGameManager.Instance.Ready_ServerRpc(IsServer);
     }
 
-    private void OnDestroy()
+    public override void OnDestroy()
     {
-        _readyButton.onClick.RemoveListener(ReadyButtonOnClick);
+        if (_readyButton != null)
+            _readyButton.onClick.RemoveListener(ReadyButtonOnClick);
+
+        base.OnDestroy();
     }
 }

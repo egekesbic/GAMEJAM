@@ -44,11 +44,9 @@ public static class AuthenticationHandler
     {
         AuthenticationState = AuthenticationState.Authenticating;
 
-        int tries = 0;
-
-        while (AuthenticationState == AuthenticationState.Authenticating && tries < maxTries)
+        int attemptCount = Mathf.Max(1, maxTries);
+        for (int attempt = 1; attempt <= attemptCount; attempt++)
         {
-
             try
             {
                 await AuthenticationService.Instance.SignInAnonymouslyAsync();
@@ -56,27 +54,26 @@ public static class AuthenticationHandler
                 if (AuthenticationService.Instance.IsSignedIn && AuthenticationService.Instance.IsAuthorized)
                 {
                     AuthenticationState = AuthenticationState.Authenticated;
-                    break;
+                    return;
                 }
             }
             catch (AuthenticationException authenticationException)
             {
                 Debug.LogError(authenticationException);
-                AuthenticationState = AuthenticationState.Error;
             }
             catch (RequestFailedException requestFailedException)
             {
                 Debug.LogError(requestFailedException);
-                AuthenticationState = AuthenticationState.Error;
             }
-            tries++;
-            await UniTask.Delay(1000);
 
-            if (AuthenticationState != AuthenticationState.Authenticated)
+            if (attempt < attemptCount)
             {
-                Debug.LogWarning($"bombom {tries} demeden sorna");
-                AuthenticationState = AuthenticationState.Timeout;
+                Debug.LogWarning($"Anonymous sign-in attempt {attempt} of {attemptCount} failed; retrying.");
+                await UniTask.Delay(1000);
             }
         }
+
+        AuthenticationState = AuthenticationState.Timeout;
+        Debug.LogError($"Anonymous sign-in failed after {attemptCount} attempt(s).");
     }
 }

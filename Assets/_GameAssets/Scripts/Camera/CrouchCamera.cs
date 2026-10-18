@@ -12,31 +12,32 @@ public class CrouchCamera : NetworkBehaviour
     [SerializeField] private float _crouchCameraOffset = 0.5f;
     [SerializeField] private float _transitionSpeed = 8f;
 
-    private float _standingHeight;
+    private Vector3 _standingPosition;
+    private Vector3 _basePosition;
+
+    public Vector3 BasePosition => _basePosition;
 
     private void Start()
     {
-        _standingHeight = _cameraTransform.localPosition.y;
+        if (_cameraTransform == null)
+            return;
+
+        _standingPosition = _cameraTransform.localPosition;
+        _basePosition = _standingPosition;
     }
 
     private void Update()
     {
-        if (!IsOwner)
+        if (!IsOwner || _playerMovement == null || _cameraTransform == null)
         {
             return;
         }
 
-        float targetHeight = _playerMovement.GetPlayerState() == PlayerState.Crouch
-            ? _standingHeight - _crouchCameraOffset
-            : _standingHeight;
+        Vector3 targetPosition = _standingPosition;
+        if (_playerMovement.GetPlayerState() == PlayerState.Crouch)
+            targetPosition.y -= _crouchCameraOffset;
 
-        Vector3 targetPosition = _cameraTransform.localPosition;
-        targetPosition.y = targetHeight;
-
-        _cameraTransform.localPosition = Vector3.Lerp(
-            _cameraTransform.localPosition,
-            targetPosition,
-            Time.deltaTime * _transitionSpeed
-        );
+        _basePosition = Vector3.Lerp(_basePosition, targetPosition, Time.deltaTime * _transitionSpeed);
+        _cameraTransform.localPosition = _basePosition;
     }
 }

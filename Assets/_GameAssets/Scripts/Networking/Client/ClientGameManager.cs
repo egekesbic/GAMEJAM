@@ -1,6 +1,5 @@
 using Cysharp.Threading.Tasks;
 using System;
-using Unity.AI.Navigation.LowLevel;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using Unity.Services.Core;
@@ -34,6 +33,12 @@ public class ClientGameManager
 
     public async UniTask StartClientAsync(string joinCode)
     {
+        if (string.IsNullOrWhiteSpace(joinCode))
+        {
+            Debug.LogError("A Relay join code is required.");
+            return;
+        }
+
         try
         {
             _joinAllocation = await RelayService.Instance.JoinAllocationAsync(joinCode);
@@ -41,10 +46,25 @@ public class ClientGameManager
         catch(Exception ex)
         {
             Debug.LogError(ex);
+            return;
         }
 
-        UnityTransport transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null)
+        {
+            Debug.LogError("Cannot join Relay because NetworkManager is missing.");
+            return;
+        }
+
+        UnityTransport transport = networkManager.GetComponent<UnityTransport>();
+        if (transport == null)
+        {
+            Debug.LogError("Cannot join Relay because UnityTransport is missing.");
+            return;
+        }
+
         transport.SetRelayServerData(AllocationUtils.ToRelayServerData(_joinAllocation, "dtls"));
-        NetworkManager.Singleton.StartClient();
+        if (!networkManager.StartClient())
+            Debug.LogError("NetworkManager failed to start the client.");
     }
 }

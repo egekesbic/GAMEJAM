@@ -24,7 +24,8 @@ public class PlayerMovement : NetworkBehaviour
 
     public override void OnNetworkSpawn()
     {
-        _playerCamera.enabled = IsOwner;
+        if (_playerCamera != null)
+            _playerCamera.enabled = IsOwner;
         _rotationY = transform.eulerAngles.y;
     }
 
@@ -32,6 +33,17 @@ public class PlayerMovement : NetworkBehaviour
     {
         if (!IsOwner)
             return;
+
+        if (FuseBox.IsAnyPanelOpen)
+        {
+            _horizontal = 0f;
+            _vertical = 0f;
+            _mouseX = 0f;
+            _isRun = false;
+            MoveControll();
+            SetPlayerState();
+            return;
+        }
 
         MyInput();
         MoveControll();
@@ -52,7 +64,7 @@ public class PlayerMovement : NetworkBehaviour
         _horizontal = Input.GetAxisRaw("Horizontal");
         _vertical = Input.GetAxisRaw("Vertical");
 
-        _mouseX = Input.GetAxis("Mouse X") * _mouseSensitivity;
+        _mouseX += Input.GetAxis("Mouse X") * _mouseSensitivity;
 
         if (Input.GetKeyDown(KeyCode.Space) && IsGround())
         {
@@ -129,45 +141,29 @@ public class PlayerMovement : NetworkBehaviour
 
     private void SetPlayerState()
     {
-        PlayerState newPlayerState = _currentPlayerState switch
+        if (!IsGround())
         {
-            PlayerState.Idle =>
-                _isCrouch ? PlayerState.Crouch :
-                _isRun ? PlayerState.Run :
-                (_horizontal != 0f || _vertical != 0f) ? PlayerState.Walk :
-                PlayerState.Idle,
+            _currentPlayerState = PlayerState.Air;
+            return;
+        }
 
-            PlayerState.Walk =>
-                !IsGround() ? PlayerState.Air :
-                _isCrouch ? PlayerState.Crouch :
-                _isRun ? PlayerState.Run :
-                (_horizontal == 0f && _vertical == 0f) ? PlayerState.Idle :
-                PlayerState.Walk,
+        if (_isCrouch)
+        {
+            _currentPlayerState = PlayerState.Crouch;
+            return;
+        }
 
-            PlayerState.Run =>
-                !IsGround() ? PlayerState.Air :
-                _isCrouch ? PlayerState.Crouch :
-                !_isRun ? PlayerState.Walk :
-                PlayerState.Run,
-
-            PlayerState.Crouch =>
-                !IsGround() ? PlayerState.Air :
-                !_isCrouch ? PlayerState.Idle :
-                PlayerState.Crouch,
-
-            PlayerState.Air =>
-                IsGround() ? PlayerState.Idle :
-                PlayerState.Air,
-
-            _ => PlayerState.Idle
-        };
-
-        _currentPlayerState = newPlayerState;
+        bool hasMovementInput = new Vector2(_horizontal, _vertical).sqrMagnitude > 0.0001f;
+        if (!hasMovementInput)
+            _currentPlayerState = PlayerState.Idle;
+        else
+            _currentPlayerState = _isRun ? PlayerState.Run : PlayerState.Walk;
     }
 
     private void Rotate()
     {
         _rotationY += _mouseX;
+        _mouseX = 0f;
 
         _playerRigidbody.MoveRotation(
             Quaternion.Euler(0f, _rotationY, 0f)

@@ -52,6 +52,14 @@ public sealed class PlayerHoldSystem : NetworkBehaviour
         if (!IsOwner || !IsSpawned)
             return;
 
+        if (FuseBox.IsAnyPanelOpen)
+        {
+            aimedItem = null;
+            if (holdPrompt != null)
+                holdPrompt.gameObject.SetActive(false);
+            return;
+        }
+
         EnsureCameraReference();
 
         if (locallyHeldItem != null && !locallyHeldItem.IsHeldBy(OwnerClientId))

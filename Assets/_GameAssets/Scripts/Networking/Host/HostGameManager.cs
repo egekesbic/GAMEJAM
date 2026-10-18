@@ -9,16 +9,29 @@ using UnityEngine.SceneManagement;
 
 public class HostGameManager
 {
-    private const int MAX_CONNECTIONS = 4;
+    // The lobby has one host slot and one client slot.
+    private const int MAX_CONNECTIONS = 1;
 
     private Allocation _allocation;
 
     private string _joinCode;
 
-    public static HostGameManager Instance { get; set; } = new HostGameManager();
-
     public async UniTask StartHostAsync()
     {
+        NetworkManager networkManager = NetworkManager.Singleton;
+        if (networkManager == null)
+        {
+            Debug.LogError("Cannot start the host because NetworkManager is missing.");
+            return;
+        }
+
+        UnityTransport transport = networkManager.GetComponent<UnityTransport>();
+        if (transport == null)
+        {
+            Debug.LogError("Cannot start the host because UnityTransport is missing.");
+            return;
+        }
+
         try
         {
            _allocation = await RelayService.Instance.CreateAllocationAsync(MAX_CONNECTIONS);
@@ -40,11 +53,20 @@ public class HostGameManager
             return;
         }  
 
-        UnityTransport transport = NetworkManager.Singleton.GetComponent<UnityTransport>();
         transport.SetRelayServerData(AllocationUtils.ToRelayServerData(_allocation, "dtls"));
-        NetworkManager.Singleton.StartHost();
+        if (!networkManager.StartHost())
+        {
+            Debug.LogError("NetworkManager failed to start the host.");
+            return;
+        }
 
-        NetworkManager.Singleton.SceneManager.LoadScene("LobbyScene",LoadSceneMode.Single);
+        if (networkManager.SceneManager == null)
+        {
+            Debug.LogError("Cannot load the lobby because Netcode scene management is disabled.");
+            return;
+        }
+
+        networkManager.SceneManager.LoadScene("LobbyScene", LoadSceneMode.Single);
     }
 
     public string GetRoomCode()
