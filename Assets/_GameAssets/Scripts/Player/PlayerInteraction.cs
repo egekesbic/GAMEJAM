@@ -15,6 +15,7 @@ public sealed class PlayerInteraction : NetworkBehaviour
     private IPlayerInteractable currentTarget;
     private FuseBox openedFuseBox;
     private Canvas promptCanvas;
+    private WaterValve waterValve;
 
     public override void OnNetworkSpawn()
     {
@@ -57,6 +58,8 @@ public sealed class PlayerInteraction : NetworkBehaviour
 
     public override void OnNetworkDespawn()
     {
+        SetCurrentTarget(null);
+
         if (openedFuseBox != null)
             openedFuseBox.ClosePanel();
 
@@ -70,19 +73,38 @@ public sealed class PlayerInteraction : NetworkBehaviour
 
         if (openedFuseBox != null && openedFuseBox.IsPanelOpen)
         {
+            SetCurrentTarget(null);
             SetPrompt(string.Empty);
             if (Input.GetKeyDown(KeyCode.Escape))
                 CloseFuseBox();
             return;
         }
 
-        currentTarget = FindTargetInView();
-        SetPrompt(currentTarget != null ? currentTarget.InteractionPrompt : string.Empty);
+        SetCurrentTarget(FindTargetInView());
+        string interactionPrompt = currentTarget != null ? currentTarget.InteractionPrompt : string.Empty;
+        if (currentTarget is WaterValveInteractable lookedAtValve && waterValve != null)
+            interactionPrompt = waterValve.GetInteractionPrompt(lookedAtValve);
+        SetPrompt(interactionPrompt);
+
+        if (currentTarget is IPlayerLeftClickInteractable leftClickTarget)
+        {
+            if (Input.GetMouseButtonDown(0))
+                leftClickTarget.InteractLeftClick();
+
+            return;
+        }
 
         if (currentTarget == null || !Input.GetKeyDown(KeyCode.F))
             return;
 
-        if (currentTarget is FuseBox targetFuseBox)
+        if (currentTarget is WaterValveInteractable targetValve)
+        {
+            if (waterValve != null)
+                waterValve.BeginInteraction(targetValve);
+            else
+                Debug.LogError("PlayerInteraction: Add WaterValve to the player object to handle valve interaction.", this);
+        }
+        else if (currentTarget is FuseBox targetFuseBox)
         {
             openedFuseBox = targetFuseBox;
             openedFuseBox.OpenPanel();
@@ -99,6 +121,25 @@ public sealed class PlayerInteraction : NetworkBehaviour
         }
     }
 
+    private void SetCurrentTarget(IPlayerInteractable nextTarget)
+    {
+        if (ReferenceEquals(currentTarget, nextTarget))
+            return;
+
+        if (currentTarget is IPlayerLeftClickInteractable previousLeftClickTarget)
+            previousLeftClickTarget.SetInteractionFocused(false);
+
+        currentTarget = nextTarget;
+
+        if (currentTarget is IPlayerLeftClickInteractable nextLeftClickTarget)
+            nextLeftClickTarget.SetInteractionFocused(true);
+
+        if (waterValve != null)
+            waterValve.OnLookTargetChanged(currentTarget as WaterValveInteractable);
+
+
+    }
+
     private void ResolveReferences()
     {
         if (ownerCamera == null)
@@ -108,9 +149,10 @@ public sealed class PlayerInteraction : NetworkBehaviour
             promptLabel = GetComponentInChildren<TMP_Text>(true);
 
         if (promptLabel != null)
-        {
             promptCanvas = promptLabel.GetComponentInParent<Canvas>(true);
-        }
+
+        if (waterValve == null)
+            waterValve = GetComponent<WaterValve>();
     }
 
     private IPlayerInteractable FindTargetInView()
@@ -172,4 +214,10 @@ public interface IPlayerInteractable
 {
     string InteractionPrompt { get; }
     void Interact(Vector3 rayOrigin, Vector3 rayDirection);
+}
+
+public interface IPlayerLeftClickInteractable : IPlayerInteractable
+{
+    void InteractLeftClick();
+    void SetInteractionFocused(bool isFocused);
 }

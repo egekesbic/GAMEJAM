@@ -10,10 +10,17 @@ public class CameraController : NetworkBehaviour
     [SerializeField] private float _mouseSensitivity = 150f;
 
     private float _xRotation;
+    private WaterValve _waterValve;
+
+    private void Awake()
+    {
+        _waterValve = GetComponent<WaterValve>();
+    }
 
     private void Update()
     {
-        if (!IsOwner || _playerCamera == null || FuseBox.IsAnyPanelOpen)
+        if (!IsOwner || _playerCamera == null || FuseBox.IsAnyPanelOpen ||
+            (_waterValve != null && _waterValve.IsInteractionActive))
         {
             return;
         }

@@ -21,9 +21,12 @@ public class PlayerMovement : NetworkBehaviour
 
     private bool _isRun;
     private bool _isCrouch;
+    private WaterValve _waterValve;
 
     public override void OnNetworkSpawn()
     {
+        _waterValve = GetComponent<WaterValve>();
+
         if (_playerCamera != null)
             _playerCamera.enabled = IsOwner;
         _rotationY = transform.eulerAngles.y;
@@ -45,6 +48,17 @@ public class PlayerMovement : NetworkBehaviour
             return;
         }
 
+        if (_waterValve != null && _waterValve.IsInteractionActive)
+        {
+            _horizontal = 0f;
+            _vertical = 0f;
+            _mouseX = 0f;
+            _isRun = false;
+            MoveControll();
+            SetPlayerState();
+            return;
+        }
+
         MyInput();
         MoveControll();
         SetPlayerState();
@@ -54,6 +68,15 @@ public class PlayerMovement : NetworkBehaviour
     {
         if (!IsOwner)
             return;
+
+        if (_waterValve != null && _waterValve.IsInteractionActive)
+        {
+            _horizontal = 0f;
+            _vertical = 0f;
+            _mouseX = 0f;
+            MoveControll();
+            return;
+        }
 
         Rotate();
         Move();

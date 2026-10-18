@@ -47,12 +47,12 @@ public class PlayerSpawner : NetworkBehaviour
         if (!IsServer)
             return;
 
-        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(clientId, out var client) &&
-            client.PlayerObject != null)
-        {
-            ReserveNearestSpawnPoint(clientId, client.PlayerObject.transform.position);
+        if (_spawnPointByClient.ContainsKey(clientId))
             return;
-        }
+
+        NetworkObject existingPlayer = null;
+        if (NetworkManager.Singleton.ConnectedClients.TryGetValue(clientId, out NetworkClient client))
+            existingPlayer = client.PlayerObject;
 
         if (_playerPrefab == null || _spawnPoints == null ||
             _spawnPoints.Length == 0)
@@ -61,29 +61,28 @@ public class PlayerSpawner : NetworkBehaviour
             return;
         }
 
-        List<int> availablePoints = new();
-
+        int selectedIndex = -1;
         for (int i = 0; i < _spawnPoints.Length; i++)
         {
             if (_spawnPoints[i] != null &&
                 !_occupiedSpawnPoints.Contains(i))
             {
-                availablePoints.Add(i);
+                selectedIndex = i;
+                break;
             }
         }
 
-        if (availablePoints.Count == 0)
+        if (selectedIndex < 0)
         {
             Debug.LogWarning("Boş spawn noktası yok!");
             return;
         }
 
-        int selectedIndex = availablePoints[
-            Random.Range(0, availablePoints.Count)];
-
-        _occupiedSpawnPoints.Add(selectedIndex);
-
         Transform spawnPoint = _spawnPoints[selectedIndex];
+
+        // Replace an untracked player object so it cannot keep an arbitrary old/default position.
+        if (existingPlayer != null && existingPlayer.IsSpawned)
+            existingPlayer.Despawn(true);
 
         NetworkObject player = Instantiate(
             _playerPrefab,
@@ -92,9 +91,10 @@ public class PlayerSpawner : NetworkBehaviour
         );
 
         player.SpawnAsPlayerObject(clientId);
+        _occupiedSpawnPoints.Add(selectedIndex);
         _spawnPointByClient[clientId] = selectedIndex;
 
-        Debug.Log($"Client {clientId}, Spawn Point {selectedIndex} noktasında doğdu.");
+        Debug.Log($"Client {clientId}, '{spawnPoint.name}' (index {selectedIndex}) noktasında doğdu: {spawnPoint.position}");
     }
 
     private void OnClientDisconnected(ulong clientId)
@@ -106,30 +106,4 @@ public class PlayerSpawner : NetworkBehaviour
         _occupiedSpawnPoints.Remove(spawnPointIndex);
     }
 
-    private void ReserveNearestSpawnPoint(ulong clientId, Vector3 playerPosition)
-    {
-        if (_spawnPointByClient.ContainsKey(clientId) || _spawnPoints == null)
-            return;
-
-        int nearestIndex = -1;
-        float nearestDistance = float.PositiveInfinity;
-        for (int i = 0; i < _spawnPoints.Length; i++)
-        {
-            if (_spawnPoints[i] == null || _occupiedSpawnPoints.Contains(i))
-                continue;
-
-            float distance = (playerPosition - _spawnPoints[i].position).sqrMagnitude;
-            if (distance < nearestDistance)
-            {
-                nearestDistance = distance;
-                nearestIndex = i;
-            }
-        }
-
-        if (nearestIndex < 0)
-            return;
-
-        _occupiedSpawnPoints.Add(nearestIndex);
-        _spawnPointByClient[clientId] = nearestIndex;
-    }
 }
