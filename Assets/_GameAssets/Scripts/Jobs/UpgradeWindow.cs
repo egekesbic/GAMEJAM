@@ -27,11 +27,27 @@ public class UpgradeWindow : NetworkBehaviour, IPlayerInteractable
     {
         _repairedBoards.OnValueChanged += OnRepairedBoardsChanged;
         UpdateBarricade(_repairedBoards.Value);
+
+        if (IsServer)
+        {
+            if (JobManager.Instance == null)
+            {
+                Debug.LogError("JobManager bulunamadı. GameScene'e JobManager ekleyin.", this);
+            }
+            else
+            {
+                JobManager.Instance.RegisterJob(JobManager.JobType.UpgradeWindow, NetworkObjectId);
+                ReportCompletionIfReady();
+            }
+        }
     }
 
     public override void OnNetworkDespawn()
     {
         _repairedBoards.OnValueChanged -= OnRepairedBoardsChanged;
+
+        if (IsServer && JobManager.Instance != null)
+            JobManager.Instance.UnregisterJob(JobManager.JobType.UpgradeWindow, NetworkObjectId);
     }
 
     private void OnRepairedBoardsChanged(int previousValue, int newValue)
@@ -67,5 +83,15 @@ public class UpgradeWindow : NetworkBehaviour, IPlayerInteractable
             return;
 
         _repairedBoards.Value++;
+        ReportCompletionIfReady();
+    }
+
+    private void ReportCompletionIfReady()
+    {
+        if (!IsServer || _barricadeBoards == null || _barricadeBoards.Length == 0 ||
+            _repairedBoards.Value < _barricadeBoards.Length || JobManager.Instance == null)
+            return;
+
+        JobManager.Instance.ReportJobCompleted(JobManager.JobType.UpgradeWindow, NetworkObjectId);
     }
 }

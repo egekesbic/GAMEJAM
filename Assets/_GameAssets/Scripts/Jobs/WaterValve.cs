@@ -38,6 +38,7 @@ public sealed class WaterValve : NetworkBehaviour
     private bool _hasTurnInput;
     private float _lastTurnInputTime;
     private bool _completionEventInvoked;
+    private bool _isTrackedJob;
 
     public bool IsCompleted => _completed.Value;
     public int Progress => _progress.Value;
@@ -55,6 +56,21 @@ public sealed class WaterValve : NetworkBehaviour
         _progress.OnValueChanged += OnProgressChanged;
         _completed.OnValueChanged += OnCompletedChanged;
 
+        _isTrackedJob = IsServer && NetworkObject.IsPlayerObject;
+        if (_isTrackedJob)
+        {
+            if (JobManager.Instance == null)
+            {
+                Debug.LogError("JobManager bulunamadı. GameScene'e JobManager ekleyin.", this);
+            }
+            else
+            {
+                JobManager.Instance.RegisterJob(JobManager.JobType.WaterValve, NetworkObjectId);
+                if (_completed.Value)
+                    JobManager.Instance.ReportJobCompleted(JobManager.JobType.WaterValve, NetworkObjectId);
+            }
+        }
+
         if (_activeValveId.Value != 0)
             AttachToValve(_activeValveId.Value);
 
@@ -68,6 +84,10 @@ public sealed class WaterValve : NetworkBehaviour
         _activeValveId.OnValueChanged -= OnActiveValveChanged;
         _progress.OnValueChanged -= OnProgressChanged;
         _completed.OnValueChanged -= OnCompletedChanged;
+
+        if (IsServer && _isTrackedJob && JobManager.Instance != null)
+            JobManager.Instance.UnregisterJob(JobManager.JobType.WaterValve, NetworkObjectId);
+        _isTrackedJob = false;
 
         if (!_completed.Value)
             ApplyProgress(0);
@@ -253,7 +273,16 @@ public sealed class WaterValve : NetworkBehaviour
     private void OnCompletedChanged(bool previous, bool current)
     {
         if (current)
+        {
+            ReportJobCompletion();
             CompleteTask();
+        }
+    }
+
+    private void ReportJobCompletion()
+    {
+        if (IsServer && _isTrackedJob && JobManager.Instance != null)
+            JobManager.Instance.ReportJobCompleted(JobManager.JobType.WaterValve, NetworkObjectId);
     }
 
     private void ApplyProgress(int progress)
@@ -349,7 +378,10 @@ public sealed class WaterValve : NetworkBehaviour
         int targetProgress = Mathf.Max(1, _clicksToComplete);
         _progress.Value = Mathf.Min(_progress.Value + 1, targetProgress);
         if (_progress.Value >= targetProgress)
+        {
             _completed.Value = true;
+            ReportJobCompletion();
+        }
     }
 
     [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]

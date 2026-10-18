@@ -40,6 +40,7 @@ public class FuseBox : NetworkBehaviour, IPlayerInteractable
     private Canvas _panelCanvas;
     private float _malfunctionChance;
     private bool _initialized;
+    private bool _isTrackedJob;
     private bool _savedCursorState;
     private bool _previousCursorVisible;
     private CursorLockMode _previousCursorLockMode;
@@ -130,6 +131,20 @@ public class FuseBox : NetworkBehaviour, IPlayerInteractable
             _initialized = true;
         }
 
+        _isTrackedJob = IsServer && NetworkObject.IsPlayerObject &&
+                        OwnerClientId == Unity.Netcode.NetworkManager.ServerClientId;
+        if (_isTrackedJob)
+        {
+            if (JobManager.Instance == null)
+                Debug.LogError("JobManager bulunamadı. GameScene'e JobManager ekleyin.", this);
+            else
+            {
+                JobManager.Instance.RegisterJob(JobManager.JobType.FuseBox, NetworkObjectId);
+                if (_completed.Value)
+                    JobManager.Instance.ReportJobCompleted(JobManager.JobType.FuseBox, NetworkObjectId);
+            }
+        }
+
         RefreshUI();
     }
 
@@ -141,6 +156,10 @@ public class FuseBox : NetworkBehaviour, IPlayerInteractable
         _completed.OnValueChanged -= OnCompletedChanged;
         ClosePanel();
         _initialized = false;
+
+        if (IsServer && _isTrackedJob && JobManager.Instance != null)
+            JobManager.Instance.UnregisterJob(JobManager.JobType.FuseBox, NetworkObjectId);
+        _isTrackedJob = false;
 
         if (_sharedInstance == this)
             _sharedInstance = null;
@@ -363,6 +382,7 @@ public class FuseBox : NetworkBehaviour, IPlayerInteractable
 
         _mainSwitchOff.Value = true;
         _completed.Value = true;
+        ReportJobCompletion();
         OnFuseBoxCompleted();
         RefreshUI();
     }
@@ -433,7 +453,16 @@ public class FuseBox : NetworkBehaviour, IPlayerInteractable
     {
         RefreshUI();
         if (current)
+        {
+            ReportJobCompletion();
             OnFuseBoxCompletedClient();
+        }
+    }
+
+    private void ReportJobCompletion()
+    {
+        if (IsServer && _isTrackedJob && JobManager.Instance != null)
+            JobManager.Instance.ReportJobCompleted(JobManager.JobType.FuseBox, NetworkObjectId);
     }
 
     private void RefreshUI()

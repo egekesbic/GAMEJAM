@@ -3,12 +3,20 @@ using Unity.Netcode.Components;
 using UnityEngine;
 using UnityEngine.Rendering;
 
+public interface IHoldableItemPhysicsMode
+{
+    bool KeepRigidbodyKinematicWhenDropped { get; }
+    void OnHoldableStateChanged(bool isHeld);
+}
+
 [RequireComponent(typeof(NetworkObject), typeof(NetworkTransform), typeof(Rigidbody))]
 public sealed class HoldableItem : NetworkBehaviour
 {
     [Header("Hold")]
     [SerializeField] private bool twoHanded;
     [SerializeField] private bool canBePickedUp = true;
+    [Tooltip("ItemDeliveryJob görevleri yalnızca eşleşen Item ID değerine sahip eşyaları sayar.")]
+    [SerializeField] private string itemId = "GenericItem";
 
     private Transform visualRoot;
 
@@ -18,6 +26,7 @@ public sealed class HoldableItem : NetworkBehaviour
         NetworkVariableWritePermission.Server);
 
     private Rigidbody body;
+    private IHoldableItemPhysicsMode physicsMode;
     private Collider[] colliders;
     private Vector3 visualStartPosition;
     private Quaternion visualStartRotation;
@@ -36,10 +45,12 @@ public sealed class HoldableItem : NetworkBehaviour
     public bool TwoHanded => twoHanded;
     public bool CanBePickedUp => canBePickedUp;
     public bool IsHeld => holderClientId.Value != ulong.MaxValue;
+    public string ItemId => string.IsNullOrWhiteSpace(itemId) ? "GenericItem" : itemId.Trim();
 
     private void Awake()
     {
         body = GetComponent<Rigidbody>();
+        physicsMode = GetComponent<IHoldableItemPhysicsMode>();
         colliders = GetComponentsInChildren<Collider>(true);
         visualRoot = FindVisualRoot();
         if (visualRoot == transform)
@@ -143,6 +154,11 @@ public sealed class HoldableItem : NetworkBehaviour
             if (velocity.sqrMagnitude > 0.001f)
                 body.AddForce(velocity, ForceMode.VelocityChange);
         }
+
+        // Trigger callbacks can be missed when a held item's colliders were disabled.
+        // Check delivery zones directly after the server re-enables the dropped item's colliders.
+        Physics.SyncTransforms();
+        ItemDeliveryJob.NotifyItemDropped(this);
     }
 
     public void AttachOwnerView(Transform viewParent, Vector3 localPosition)
@@ -270,21 +286,25 @@ public sealed class HoldableItem : NetworkBehaviour
 
     private void ApplyHeldPhysics(bool held)
     {
+        bool keepKinematicWhenDropped = physicsMode != null && physicsMode.KeepRigidbodyKinematicWhenDropped;
+
         if (body != null)
         {
-            body.isKinematic = held || !IsServer;
-            body.useGravity = !held && IsServer;
+            body.isKinematic = held || !IsServer || keepKinematicWhenDropped;
+            body.useGravity = !held && IsServer && !keepKinematicWhenDropped;
             body.linearVelocity = Vector3.zero;
             body.angularVelocity = Vector3.zero;
         }
 
-        if (colliders == null)
-            return;
-
-        foreach (Collider itemCollider in colliders)
+        if (colliders != null)
         {
-            if (itemCollider != null)
-                itemCollider.enabled = !held;
+            foreach (Collider itemCollider in colliders)
+            {
+                if (itemCollider != null)
+                    itemCollider.enabled = !held;
+            }
         }
+
+        physicsMode?.OnHoldableStateChanged(held);
     }
 }
