@@ -33,6 +33,7 @@ public sealed class ItemDeliveryJob : NetworkBehaviour
 
     public int DeliveredItemCount => _deliveredItemCount.Value;
     public bool IsCompleted => _completed.Value;
+    public string JobDisplayName => GetJobName();
 
     private void Awake()
     {

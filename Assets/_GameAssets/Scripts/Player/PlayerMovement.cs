@@ -185,7 +185,7 @@ public class PlayerMovement : NetworkBehaviour
 
     private void Rotate()
     {
-        _rotationY += _mouseX;
+        _rotationY += _mouseX * SettingsMenu.MouseSensitivity;
         _mouseX = 0f;
 
         _playerRigidbody.MoveRotation(

@@ -1,3 +1,5 @@
+using System;
+using Unity.Collections;
 using TMPro;
 using Unity.Netcode;
 using UnityEngine;
@@ -8,6 +10,57 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class GameManager : NetworkBehaviour
 {
+    public struct ReplicatedTask : INetworkSerializable, IEquatable<ReplicatedTask>
+    {
+        public ulong NetworkObjectId;
+        public byte JobTypeId;
+        public FixedString512Bytes DisplayName;
+        public bool IsCompleted;
+
+        public ReplicatedTask(ulong networkObjectId, byte jobTypeId, string displayName, bool isCompleted)
+        {
+            NetworkObjectId = networkObjectId;
+            JobTypeId = jobTypeId;
+            DisplayName = default;
+            DisplayName.CopyFromTruncated(displayName ?? string.Empty);
+            IsCompleted = isCompleted;
+        }
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref NetworkObjectId);
+            serializer.SerializeValue(ref JobTypeId);
+            serializer.SerializeValue(ref DisplayName);
+            serializer.SerializeValue(ref IsCompleted);
+        }
+
+        public bool Equals(ReplicatedTask other)
+        {
+            return NetworkObjectId == other.NetworkObjectId &&
+                   JobTypeId == other.JobTypeId &&
+                   DisplayName.Equals(other.DisplayName) &&
+                   IsCompleted == other.IsCompleted;
+        }
+
+        public override bool Equals(object obj)
+        {
+            return obj is ReplicatedTask other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            unchecked
+            {
+                int hash = NetworkObjectId.GetHashCode();
+                hash = (hash * 397) ^ JobTypeId.GetHashCode();
+                hash = (hash * 397) ^ DisplayName.GetHashCode();
+                return (hash * 397) ^ IsCompleted.GetHashCode();
+            }
+        }
+    }
+
+    public static GameManager Instance { get; private set; }
+
     [Header("Match")]
     [SerializeField, Min(1)] private int _matchDurationSeconds = 300;
     [SerializeField, Range(1, 100)] private int _requiredCompletionPercent = 80;
@@ -20,18 +73,38 @@ public sealed class GameManager : NetworkBehaviour
         false,
         NetworkVariableReadPermission.Everyone,
         NetworkVariableWritePermission.Server);
+    private readonly NetworkList<ReplicatedTask> _replicatedTasks = new NetworkList<ReplicatedTask>(
+        null,
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Server);
 
     private GameObject _timerHud;
     private TMP_Text _timerText;
+    private JobManager _jobManager;
     private float _secondAccumulator;
+    private bool _earlyWinCheckPending;
 
     public int RemainingSeconds => _remainingSeconds.Value;
+    public NetworkList<ReplicatedTask> Tasks => _replicatedTasks;
+    public event Action TasksChanged;
+
+    private void Awake()
+    {
+        if (Instance != null && Instance != this)
+        {
+            Debug.LogError("Birden fazla GameManager bulundu. GameScene'de tek bir GameManager olmalı.", this);
+            return;
+        }
+
+        Instance = this;
+    }
 
     public override void OnNetworkSpawn()
     {
         base.OnNetworkSpawn();
 
         _remainingSeconds.OnValueChanged += OnRemainingSecondsChanged;
+        _replicatedTasks.OnListChanged += OnReplicatedTasksChanged;
         CreateTimerHud();
         RefreshTimerText(_remainingSeconds.Value);
 
@@ -40,21 +113,51 @@ public sealed class GameManager : NetworkBehaviour
             _remainingSeconds.Value = Mathf.Max(1, _matchDurationSeconds);
             _matchEnded.Value = false;
             _secondAccumulator = 0f;
+
+            _jobManager = JobManager.Instance;
+            if (_jobManager != null)
+            {
+                _jobManager.MatchProgressChanged += HandleMatchProgressChanged;
+                _earlyWinCheckPending = true;
+                SyncReplicatedTasks();
+            }
+
             RefreshTimerText(_remainingSeconds.Value);
         }
+
+        TasksChanged?.Invoke();
     }
 
     public override void OnNetworkDespawn()
     {
         _remainingSeconds.OnValueChanged -= OnRemainingSecondsChanged;
+        _replicatedTasks.OnListChanged -= OnReplicatedTasksChanged;
+        if (_jobManager != null)
+            _jobManager.MatchProgressChanged -= HandleMatchProgressChanged;
+
         DestroyTimerHud();
         base.OnNetworkDespawn();
+    }
+
+    public override void OnDestroy()
+    {
+        if (Instance == this)
+            Instance = null;
+
+        base.OnDestroy();
     }
 
     private void Update()
     {
         if (!IsServer || !IsSpawned || _matchEnded.Value)
             return;
+
+        if (_earlyWinCheckPending)
+        {
+            _earlyWinCheckPending = false;
+            if (CheckForAllJobsCompleted())
+                return;
+        }
 
         _secondAccumulator += Time.unscaledDeltaTime;
         int elapsedSeconds = Mathf.FloorToInt(_secondAccumulator);
@@ -68,26 +171,96 @@ public sealed class GameManager : NetworkBehaviour
             EndMatch();
     }
 
+    private void HandleMatchProgressChanged()
+    {
+        _earlyWinCheckPending = true;
+        if (IsServer && IsSpawned)
+            SyncReplicatedTasks();
+    }
+
+    private void SyncReplicatedTasks()
+    {
+        if (!IsServer || !IsSpawned || _jobManager == null)
+            return;
+
+        System.Collections.Generic.List<JobManager.TaskSnapshot> snapshots = _jobManager.GetTaskSnapshots();
+        bool hasChanged = snapshots.Count != _replicatedTasks.Count;
+        if (!hasChanged)
+        {
+            for (int i = 0; i < snapshots.Count; i++)
+            {
+                JobManager.TaskSnapshot snapshot = snapshots[i];
+                ReplicatedTask current = _replicatedTasks[i];
+                if (current.NetworkObjectId != snapshot.NetworkObjectId ||
+                    current.JobTypeId != (byte)snapshot.Type ||
+                    current.DisplayName.ToString() != snapshot.DisplayName ||
+                    current.IsCompleted != snapshot.IsCompleted)
+                {
+                    hasChanged = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasChanged)
+            return;
+
+        _replicatedTasks.Clear();
+        foreach (JobManager.TaskSnapshot snapshot in snapshots)
+        {
+            _replicatedTasks.Add(new ReplicatedTask(
+                snapshot.NetworkObjectId,
+                (byte)snapshot.Type,
+                snapshot.DisplayName,
+                snapshot.IsCompleted));
+        }
+    }
+
+    private void OnReplicatedTasksChanged(NetworkListEvent<ReplicatedTask> changeEvent)
+    {
+        TasksChanged?.Invoke();
+    }
+
+    private bool CheckForAllJobsCompleted()
+    {
+        if (_jobManager == null || _matchEnded.Value)
+            return false;
+
+        _jobManager.GetMatchProgress(out int completedJobs, out int totalJobs);
+        if (totalJobs <= 0 || completedJobs < totalJobs)
+            return false;
+
+        FinishMatch(true, completedJobs, totalJobs, "Tüm görevler tamamlandı");
+        return true;
+    }
+
     private void EndMatch()
     {
         if (_matchEnded.Value)
             return;
 
-        _matchEnded.Value = true;
-
         int completedJobs = 0;
         int totalJobs = 0;
-        if (JobManager.Instance == null)
+        if (_jobManager == null)
             Debug.LogError("GameManager: JobManager bulunamadı; maç kayıp sayılacak.", this);
         else
-            JobManager.Instance.GetMatchProgress(out completedJobs, out totalJobs);
+            _jobManager.GetMatchProgress(out completedJobs, out totalJobs);
 
         bool won = totalJobs > 0 &&
                    (long)completedJobs * 100 >= (long)totalJobs * _requiredCompletionPercent;
+        FinishMatch(won, completedJobs, totalJobs, "Süre doldu");
+    }
+
+    private void FinishMatch(bool won, int completedJobs, int totalJobs, string reason)
+    {
+        if (_matchEnded.Value)
+            return;
+
+        _matchEnded.Value = true;
         string resultScene = won ? "WinScene" : "LoseScene";
 
         Debug.Log(
-            $"[GameManager] Süre doldu: {completedJobs}/{totalJobs} görev tamamlandı " +
+            $"[GameManager] {reason}: {completedJobs}/{totalJobs} görev tamamlandı " +
             $"({_requiredCompletionPercent}% gerekli). {(won ? "Kazandınız" : "Kaybettiniz")}: {resultScene}",
             this);
 
